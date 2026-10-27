@@ -12,6 +12,8 @@ export type Periodo = keyof typeof PERIODOS;
 export async function getDashboard(orgId: string, periodo: Periodo) {
   const db = await getDb();
   const since = new Date(Date.now() - Number(periodo) * 86400000);
+  // Em sql`` cru a data vai como texto: o driver postgres.js (Neon) não aceita Date ali; o PGlite aceitava.
+  const sinceIso = since.toISOString();
   const inOrg = eq(opportunities.orgId, orgId);
   const inPeriod = gte(opportunities.createdAt, since);
 
@@ -67,8 +69,8 @@ export async function getDashboard(orgId: string, periodo: Periodo) {
         ownerId: opportunities.ownerId,
         name: users.name,
         abertas: sql<number>`count(*) filter (where ${opportunities.stage} in ${ETAPAS_ABERTAS})::int`,
-        ganhas: sql<number>`count(*) filter (where ${opportunities.stage} = 'ganho' and ${opportunities.closedAt} >= ${since})::int`,
-        perdidas: sql<number>`count(*) filter (where ${opportunities.stage} = 'perdido' and ${opportunities.closedAt} >= ${since})::int`,
+        ganhas: sql<number>`count(*) filter (where ${opportunities.stage} = 'ganho' and ${opportunities.closedAt} >= ${sinceIso}::timestamptz)::int`,
+        perdidas: sql<number>`count(*) filter (where ${opportunities.stage} = 'perdido' and ${opportunities.closedAt} >= ${sinceIso}::timestamptz)::int`,
       })
       .from(opportunities)
       .innerJoin(users, eq(users.id, opportunities.ownerId))
