@@ -63,7 +63,7 @@ const initials = (name: string) =>
     .map((p) => p[0]?.toUpperCase())
     .join("");
 
-export function Shell({ user, dataNote, collapsed: initialCollapsed, children }: { user: { name: string; role: Role; orgName: string }; dataNote: DataNote; collapsed?: boolean; children: ReactNode }) {
+export function Shell({ user, dataNote, collapsed: initialCollapsed, semLogout, children }: { user: { name: string; role: Role; orgName: string }; dataNote: DataNote; collapsed?: boolean; semLogout?: boolean; children: ReactNode }) {
   const path = usePathname();
   const [collapsed, setCollapsed] = useState(!!initialCollapsed);
   // Atalho de teclado troca sem animação: ação repetida não deve esperar transição.
@@ -176,12 +176,12 @@ export function Shell({ user, dataNote, collapsed: initialCollapsed, children }:
               </span>
             </div>
             <div className="mt-2 flex items-center gap-1 group-data-[collapsed]/side:flex-col">
-              <form action={logoutAction} className="flex-1 group-data-[collapsed]/side:w-full">
+              {semLogout ? <span className="flex-1" /> : <form action={logoutAction} className="flex-1 group-data-[collapsed]/side:w-full">
                 <button className="pressable flex h-8 w-full items-center gap-2 rounded-md px-[11px] text-xs text-cream/55 transition-colors hover:bg-white/[0.04] hover:text-cream" title="Sair">
                   <IconLogout width={15} height={15} className="shrink-0" />
                   <span className="whitespace-nowrap group-data-[collapsed]/side:hidden">Sair</span>
                 </button>
-              </form>
+              </form>}
               <button
                 onClick={() => toggle()}
                 className="pressable grid size-8 shrink-0 place-items-center rounded-md text-cream/55 transition-colors hover:bg-white/[0.04] hover:text-cream group-data-[collapsed]/side:w-full"

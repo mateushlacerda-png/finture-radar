@@ -45,10 +45,31 @@ export async function destroySession() {
   jar.delete(SESSION_COOKIE);
 }
 
+/**
+ * Acesso aberto (decisão do usuário em 2026-10-27, até o Radar entrar no hub da Finture):
+ * com RADAR_ACESSO_ABERTO = e-mail de um usuário, quem abre o site entra como esse usuário, sem login.
+ * Sem a variável, vale o login normal (ambiente local e testes). Na integração com o hub, é aqui que
+ * a identidade passa a vir da plataforma.
+ */
+export const acessoAberto = () => !!process.env.RADAR_ACESSO_ABERTO;
+
+async function sessaoAberta(): Promise<Session | null> {
+  const email = process.env.RADAR_ACESSO_ABERTO;
+  if (!email) return null;
+  const db = await getDb();
+  const rows = await db
+    .select({ userId: users.id, orgId: users.orgId, orgName: organizations.name, name: users.name, email: users.email, role: users.role })
+    .from(users)
+    .innerJoin(organizations, eq(organizations.id, users.orgId))
+    .where(eq(users.email, email))
+    .limit(1);
+  return (rows[0] as Session | undefined) ?? null;
+}
+
 export const getSession = cache(async (): Promise<Session | null> => {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
+  if (!token) return sessaoAberta();
   const db = await getDb();
   const rows = await db
     .select({
@@ -64,7 +85,7 @@ export const getSession = cache(async (): Promise<Session | null> => {
     .innerJoin(organizations, eq(organizations.id, users.orgId))
     .where(and(eq(sessions.tokenHash, sha256(token)), gt(sessions.expiresAt, new Date())))
     .limit(1);
-  return (rows[0] as Session | undefined) ?? null;
+  return (rows[0] as Session | undefined) ?? (await sessaoAberta());
 });
 
 /** Para páginas: redireciona ao login. */
