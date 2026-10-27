@@ -15,8 +15,9 @@ import {
 } from "@/lib/db/schema";
 import { CNAES_CLIENTE, CNAES_PARCEIRO, cnaeInfo, cnaesDoSetor, SETORES, type Setor } from "@/lib/cnaes";
 import { REGIOES, type ScoreKey } from "@/lib/domain";
-import { parseFilters, scoreKeyOf, type Filters } from "@/lib/filters";
-import { scoreCompany, solucoesRecomendadas, type CompanyScores } from "@/lib/scoring/engine";
+import { parseFilters, scoreKeyOf, serializeFilters, type Filters, type ScoreSort } from "@/lib/filters";
+import { RANKING_TTL_MS, rankings } from "./ranking-cache";
+import { perfilDoScore, scoreCompany, solucoesRecomendadas, type CompanyScores } from "@/lib/scoring/engine";
 import { mergeWeights, type Weights } from "@/lib/scoring/weights";
 import { factualOverview } from "@/lib/overview";
 import { iaDisponivel, type AiOverview } from "@/lib/ai/overview";
@@ -148,7 +149,7 @@ function summarize(s: CompanyScores): ScoreSummary {
   };
 }
 
-function toRow(r: Awaited<ReturnType<typeof rawSearch>>[number], s: ScoreSummary): RadarRow {
+function toRow({ r, status, nova }: Hit, s: ScoreSummary): RadarRow {
   const info = cnaeInfo(r.cnaePrincipal);
   return {
     id: r.id,
@@ -163,13 +164,13 @@ function toRow(r: Awaited<ReturnType<typeof rawSearch>>[number], s: ScoreSummary
     cnae: r.cnaePrincipal,
     setor: info ? SETORES[info.setor] : null,
     parceiroTipo: info?.parceria ?? null,
-    status: r.status ?? "novo",
+    status: status ?? "novo",
     temContato: !!(r.telefone || r.email),
     telefone: r.telefone,
     email: r.email,
     site: r.site,
     isDemo: r.isDemo,
-    nova: r.nova,
+    nova,
     scores: s.scores,
     confianca: s.confianca,
     recomendadas: s.recomendadas,
@@ -183,34 +184,58 @@ function toRow(r: Awaited<ReturnType<typeof rawSearch>>[number], s: ScoreSummary
 // Fase 2 (Postgres + PostGIS): voltar o filtro para o SQL com índices e consulta por viewport.
 const { status: _status, ...publicCols } = baseCols;
 void _status;
-type BaseRow = Awaited<ReturnType<typeof loadBaseRows>>[number] & { busca: string };
+type BaseRow = Awaited<ReturnType<typeof loadBaseRows>>[number] & { busca: string | null; geo: string | null };
 // ultima = competência mais recente em que empresas entraram pela atualização mensal (nula até a 1ª).
 type Base = { key: string; rows: BaseRow[]; ultima: string | null };
+type Hit = { r: BaseRow; status: "novo" | "prospectado" | "descartado" | null; nova: boolean };
 const gb = globalThis as unknown as { __radarBase?: Base; __radarBaseLoading?: Promise<Base> };
 
+// Ordem alfabética do nome exibido feita no banco: a ordenação por score (por baldes) herda o desempate.
+// Mesma regra de lib/nome.ts (fantasia só com duas letras ou mais).
 async function loadBaseRows() {
   const db = await getDb();
-  return db.select(publicCols).from(companies);
+  return db
+    .select(publicCols)
+    .from(companies)
+    .orderBy(sql`lower(case when ${companies.nomeFantasia} ~ '[[:alpha:]].*[[:alpha:]]' then ${companies.nomeFantasia} else ${companies.razaoSocial} end)`, companies.id);
 }
 
 const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+// A base só muda na ingestão mensal ou num ajuste de dados: conferir a versão a cada 30 s basta,
+// e poupa uma contagem sobre centenas de milhares de linhas em toda requisição.
+const BASE_CHECK_MS = 30_000;
+const gc = globalThis as unknown as { __radarBaseCheck?: { at: number; key: string } };
+
 async function getBase(): Promise<Base> {
+  const agora = Date.now();
+  if (gb.__radarBase && gc.__radarBaseCheck && agora - gc.__radarBaseCheck.at < BASE_CHECK_MS && gc.__radarBaseCheck.key === gb.__radarBase.key) return gb.__radarBase;
   const db = await getDb();
   const [v] = await db.select({ n: sql<number>`count(*)::int`, m: sql<string>`max(${companies.updatedAt})::text` }).from(companies);
   const key = `${v.n}|${v.m}`;
+  gc.__radarBaseCheck = { at: agora, key };
   if (gb.__radarBase?.key === key) return gb.__radarBase;
+  const t0 = performance.now();
   gb.__radarBaseLoading ??= loadBaseRows()
     .then((rows) => {
+      if (process.env.RADAR_TIMING) console.log(`[timing] base lida em ${(performance.now() - t0).toFixed(0)}ms (${rows.length} linhas)`);
+      // Texto de busca sem acento fica para a primeira busca por nome (normalize em 500 mil nomes custava segundos).
+      const ordenadas: BaseRow[] = rows.map((r) => ({
+        ...r,
+        busca: null,
+        // "id,lng,lat" pronto para o JSON do mapa (4 casas, ~11 m); montar isso a cada busca custava ~1 s.
+        geo: r.lat === null || r.lng === null ? null : `${r.id},${Math.round(r.lng * 1e4) / 1e4},${Math.round(r.lat * 1e4) / 1e4}`,
+      }));
       let ultima: string | null = null;
       for (const r of rows) if (r.entrouEm && (!ultima || r.entrouEm > ultima)) ultima = r.entrouEm;
       const base: Base = {
         key,
-        rows: rows.map((r) => ({ ...r, busca: semAcento(`${r.razaoSocial} ${r.nomeFantasia ?? ""}`) + " " + r.cnpj })),
+        rows: ordenadas,
         ultima,
       };
       // Base nova (ingestão): situação e dados mudaram, então os scores guardados também.
       scoreCaches.clear();
+      if (process.env.RADAR_TIMING) console.log(`[timing] base pronta em ${(performance.now() - t0).toFixed(0)}ms`);
       gb.__radarBase = base;
       return base;
     })
@@ -218,13 +243,21 @@ async function getBase(): Promise<Base> {
   return gb.__radarBaseLoading;
 }
 
+/** Municípios presentes na base (autocompletar do filtro). Consulta direta: a página não carrega a base. */
+export async function getMunicipios(): Promise<{ uf: string; municipio: string }[]> {
+  const db = await getDb();
+  return db.selectDistinct({ uf: companies.uf, municipio: companies.municipio }).from(companies).orderBy(companies.municipio);
+}
+
 /** Quantas empresas ativas entraram na última atualização mensal (para o aviso do Radar). */
 export async function getNovidades(): Promise<{ competencia: string; total: number } | null> {
-  const base = await getBase();
-  if (!base.ultima) return null;
-  let total = 0;
-  for (const r of base.rows) if (r.entrouEm === base.ultima && r.situacao === "ATIVA") total++;
-  return { competencia: base.ultima, total };
+  const db = await getDb();
+  const [row] = await db
+    .select({ competencia: companies.entrouEm, total: sql<number>`count(*)::int` })
+    .from(companies)
+    .where(sql`${companies.entrouEm} = (select max(${companies.entrouEm}) from ${companies}) and ${companies.situacao} = 'ATIVA'`)
+    .groupBy(companies.entrouEm);
+  return row?.competencia ? { competencia: row.competencia, total: row.total } : null;
 }
 
 async function rawSearch(orgId: string, f: Filters) {
@@ -265,7 +298,8 @@ async function rawSearch(orgId: string, f: Filters) {
   const q = f.q ? semAcento(f.q) : null;
   const qDigits = f.q ? f.q.replace(/\D/g, "") : "";
 
-  const out: (BaseRow & { status: "novo" | "prospectado" | "descartado" | null; nova: boolean })[] = [];
+  // Sem copiar a linha da base: com 500 mil empresas, cada cópia por busca custava centenas de MB.
+  const out: Hit[] = [];
   for (const r of base.rows) {
     // Baixada, suspensa ou inapta não pode ser abordada: some do Radar (a ficha e o CRM continuam abrindo).
     if (r.situacao !== "ATIVA") continue;
@@ -281,7 +315,7 @@ async function rawSearch(orgId: string, f: Filters) {
     if (abertaAte && !(r.dataAbertura && r.dataAbertura <= abertaAte)) continue;
     if (abertaDesde && !(r.dataAbertura && r.dataAbertura >= abertaDesde)) continue;
     if (f.contato && !r.telefone && !r.email) continue;
-    if (q && !r.busca.includes(q) && !(qDigits.length >= 4 && r.cnpj.includes(qDigits))) continue;
+    if (q && !(r.busca ??= semAcento(`${r.razaoSocial} ${r.nomeFantasia ?? ""}`) + " " + r.cnpj).includes(q) && !(qDigits.length >= 4 && r.cnpj.includes(qDigits))) continue;
     if (naLista && !naLista.has(r.id)) continue;
     if (suprimidos.has(r.cnpj)) continue;
     const s = st.get(r.id) ?? null;
@@ -289,14 +323,16 @@ async function rawSearch(orgId: string, f: Filters) {
     if (status === "novo" && s && s !== "novo") continue;
     if (status === "prospectado" && s !== "prospectado") continue;
     if (status === "descartado" && s !== "descartado") continue;
-    out.push({ ...r, status: s, nova });
+    out.push({ r, status: s, nova });
   }
   return out;
 }
 
 // Cache de scores: empresas só mudam na ingestão, e o score depende só dos pesos e da data
 // (tempo de atividade). Chave = pesos + dia. Fase 2: tabela company_scores (ARQUITETURA.md).
-type ScoreCache = Map<number, ScoreSummary>;
+// Dois níveis: por empresa (consulta direta) e por perfil (perfilDoScore), que evita recalcular o
+// mesmo score para centenas de milhares de empresas parecidas.
+type ScoreCache = { porId: Map<number, ScoreSummary>; porPerfil: Map<string, ScoreSummary>; now: Date };
 const g = globalThis as unknown as { __radarScoreCache?: Map<string, ScoreCache> };
 const scoreCaches = (g.__radarScoreCache ??= new Map());
 
@@ -305,43 +341,95 @@ function scoreCacheFor(weights: Weights): ScoreCache {
   let c = scoreCaches.get(key);
   if (!c) {
     if (scoreCaches.size >= 8) scoreCaches.delete(scoreCaches.keys().next().value!);
-    c = new Map();
+    c = { porId: new Map(), porPerfil: new Map(), now: new Date() };
     scoreCaches.set(key, c);
   }
   return c;
 }
 
-function cachedScore(cache: ScoreCache, r: Awaited<ReturnType<typeof rawSearch>>[number], weights: Weights): ScoreSummary {
-  let s = cache.get(r.id);
+function cachedScore(cache: ScoreCache, r: BaseRow, weights: Weights): ScoreSummary {
+  let s = cache.porId.get(r.id);
   if (!s) {
-    s = summarize(scoreCompany({ ...r, capitalSocial: r.capitalSocial === null ? null : Number(r.capitalSocial) }, weights));
-    cache.set(r.id, s);
+    const c = { ...r, capitalSocial: r.capitalSocial === null ? null : Number(r.capitalSocial) };
+    const perfil = perfilDoScore(c, cache.now);
+    s = cache.porPerfil.get(perfil);
+    if (!s) {
+      s = summarize(scoreCompany(c, weights, cache.now));
+      cache.porPerfil.set(perfil, s);
+    }
+    cache.porId.set(r.id, s);
   }
   return s;
 }
 
-/** Busca + score + ordenação. ADR-002: score calculado em memória sobre o recorte do SQL. */
+export type Ranked = Hit & { s: ScoreSummary };
+type Ranking = { total: number; ranked: Ranked[]; scoreKey: ScoreSort };
+
+/**
+ * Busca + score + ordenação, sem montar as linhas completas (com 500 mil empresas, montar tudo custava
+ * segundos). Resultado reaproveitado por RANKING_TTL_MS para a lista e o mapa da mesma busca.
+ */
+async function rankCompanies(orgId: string, f: Filters): Promise<Ranking> {
+  const [{ weights, version }, base] = await Promise.all([getWeights(orgId), getBase()]);
+  const chave = `${orgId}|${base.key}|${version}|${new Date().toISOString().slice(0, 10)}|${serializeFilters(f)}`;
+  const hit = rankings.get(chave);
+  if (hit && Date.now() - hit.at < RANKING_TTL_MS) return hit.p as Promise<Ranking>;
+  const p = (async () => {
+    const t0 = performance.now();
+    const raw = await rawSearch(orgId, f);
+    const t1 = performance.now();
+    const key = scoreKeyOf(f);
+    const cache = scoreCacheFor(weights);
+    // Ordenação por baldes: o score é inteiro de 0 a 100 e a base já está em ordem alfabética,
+    // então score decrescente com desempate pelo nome sai numa passada, sem comparar textos.
+    const baldes: Ranked[][] = Array.from({ length: 101 }, () => []);
+    const min = f.scoreMin ?? 0;
+    for (const h of raw) {
+      const sc = cachedScore(cache, h.r, weights);
+      const v = sc.scores[key];
+      if (v >= min) baldes[v].push({ ...h, s: sc });
+    }
+    const ranked: Ranked[] = [];
+    for (let v = 100; v >= 0; v--) for (const x of baldes[v]) ranked.push(x);
+    if (process.env.RADAR_TIMING) console.log(`[timing] filtro=${(t1 - t0).toFixed(0)}ms score+ordem=${(performance.now() - t1).toFixed(0)}ms linhas=${ranked.length}`);
+    return { total: ranked.length, ranked, scoreKey: key };
+  })();
+  if (rankings.size >= 6) rankings.delete(rankings.keys().next().value!);
+  rankings.set(chave, { at: Date.now(), p });
+  p.catch(() => rankings.delete(chave));
+  return p;
+}
+
+/** Busca do Radar. `rows` é a página pedida; `ranked` é o resultado inteiro, leve (mapa e contagens). */
 export async function searchCompanies(orgId: string, f: Filters, opts: { offset?: number; limit?: number } = {}) {
-  const t0 = performance.now();
-  const [{ weights }, raw] = await Promise.all([getWeights(orgId), rawSearch(orgId, f)]);
-  const t1 = performance.now();
-  const key = scoreKeyOf(f);
-  const cache = scoreCacheFor(weights);
-  let rows = raw.map((r) => toRow(r, cachedScore(cache, r, weights)));
-  if (f.scoreMin !== undefined) rows = rows.filter((r) => r.scores[key] >= f.scoreMin!);
-  rows.sort((a, b) => b.scores[key] - a.scores[key] || a.nome.localeCompare(b.nome));
-  const total = rows.length;
-  if (process.env.RADAR_TIMING) console.log(`[timing] sql=${(t1 - t0).toFixed(0)}ms score=${(performance.now() - t1).toFixed(0)}ms rows=${raw.length}`);
+  const { total, ranked, scoreKey } = await rankCompanies(orgId, f);
   const offset = opts.offset ?? 0;
-  const page = opts.limit === undefined ? rows : rows.slice(offset, offset + opts.limit);
-  return { total, rows: page, all: rows, scoreKey: key };
+  const slice = opts.limit === undefined ? ranked : ranked.slice(offset, offset + opts.limit);
+  return {
+    total,
+    scoreKey,
+    ranked,
+    rows: slice.map((x) => toRow(x, x.s)),
+    /** Todas as linhas completas: só para exportação e listas (caro com a base inteira). */
+    get all() {
+      return ranked.map((x) => toRow(x, x.s));
+    },
+  };
 }
 
 /** Base ativa pontuada com pesos arbitrários (prévia da calibração). */
 export async function searchCompaniesWith(orgId: string, weights: Weights) {
   const raw = await rawSearch(orgId, parseFilters({}));
   const now = new Date();
-  return raw.map((r) => toRow(r, summarize(scoreCompany({ ...r, capitalSocial: r.capitalSocial === null ? null : Number(r.capitalSocial) }, weights, now))));
+  // Só os números, e uma vez por perfil (perfilDoScore): a prévia conta faixas de score.
+  const porPerfil = new Map<string, ScoreSummary>();
+  return raw.map(({ r }) => {
+    const c = { ...r, capitalSocial: r.capitalSocial === null ? null : Number(r.capitalSocial) };
+    const perfil = perfilDoScore(c, now);
+    let s = porPerfil.get(perfil);
+    if (!s) porPerfil.set(perfil, (s = summarize(scoreCompany(c, weights, now))));
+    return s;
+  });
 }
 
 export async function getCompanyDetail(orgId: string, id: number) {

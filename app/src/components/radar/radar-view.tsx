@@ -23,6 +23,7 @@ const MapView = dynamic(() => import("./map-view").then((m) => m.MapView), {
 });
 
 type ListResp = { total: number; page: number; size: number; scoreKey: string; rows: RadarRow[] };
+type GeoResp = { total: number; scoreKey: string; limitado: boolean; points: Point[] };
 
 // Larguras dos painéis flutuantes no desktop (px); o mapa centraliza no espaço que sobra.
 const FILTROS_W = 300;
@@ -91,6 +92,8 @@ export function RadarView({ initialQuery, ctx, municipios, listName, initialSele
   const [listOpen, setListOpen] = useState(true);
   const [modal, setModal] = useState<null | "search" | "bulk">(null);
   const [allIds, setAllIds] = useState<number[]>([]);
+  const [geoKey, setGeoKey] = useState<string | null>(null);
+  const [mapaInfo, setMapaInfo] = useState<{ mostrados: number; total: number } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [q, setQ] = useState(filters.q ?? "");
   const reqId = useRef(0);
@@ -131,24 +134,32 @@ export function RadarView({ initialQuery, ctx, municipios, listName, initialSele
     if (stage !== "ready") return;
     const id = ++reqId.current;
     const key = `${query}#${reloadKey}`;
-    Promise.all([
-      fetch(`/api/companies/geo?${query}`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : Promise.reject(r))),
-      fetch(`/api/companies?${query}&page=0`, { cache: "no-store" }).then((r) => (r.ok ? r.json() : Promise.reject(r))),
-    ])
-      .then(([geo, l]: [{ points: Point[] }, ListResp]) => {
+    // Lista e mapa chegam separados: a lista (40 linhas) aparece sem esperar o mapa (até 120 mil pontos).
+    const falhou = (r: Response | undefined) => {
+      if (id !== reqId.current) return;
+      if (r?.status === 401) router.push("/login");
+      setLoaded({ key, error: "Não foi possível carregar as empresas. Tente de novo." });
+    };
+    fetch(`/api/companies?${query}&page=0`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+      .then((l: ListResp) => {
         if (id !== reqId.current) return;
-        setPoints(geo.points);
-        setAllIds(geo.points.map((p) => p[0]));
         setList(l.rows);
         setTotal(l.total);
         setPage(0);
         setLoaded({ key, error: null });
       })
-      .catch(async (r) => {
+      .catch(falhou);
+    fetch(`/api/companies/geo?${query}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r)))
+      .then((geo: GeoResp) => {
         if (id !== reqId.current) return;
-        if (r?.status === 401) router.push("/login");
-        setLoaded({ key, error: "Não foi possível carregar as empresas. Tente de novo." });
-      });
+        setPoints(geo.points);
+        setAllIds(geo.limitado ? [] : geo.points.map((p) => p[0]));
+        setMapaInfo(geo.limitado ? { mostrados: geo.points.length, total: geo.total } : null);
+        setGeoKey(key);
+      })
+      .catch(falhou);
   }, [query, reloadKey, router, stage]);
 
   const loadMore = async () => {
@@ -192,7 +203,15 @@ export function RadarView({ initialQuery, ctx, municipios, listName, initialSele
     <div className="relative flex h-full flex-col overflow-hidden">
       {/* Mapa: tela inteira, por baixo de tudo */}
       <div className={cx("absolute inset-0", mobileTab === "lista" && "max-md:hidden")}>
-        <MapView points={points} selectedId={selected} onSelect={setSelected} fitKey={fitKey} loading={loading} pad={pad} />
+        <MapView points={points} selectedId={selected} onSelect={setSelected} fitKey={fitKey} loading={geoKey !== loadKey} pad={pad} />
+        {mapaInfo && geoKey === loadKey && (
+          <p
+            className="pointer-events-none absolute z-10 w-max max-w-[min(420px,calc(100%-2rem))] -translate-x-1/2 rounded-xl bg-ink/85 px-3 py-1.5 text-center text-[11px] leading-snug text-cream shadow-[var(--shadow-pop)] backdrop-blur max-md:top-3"
+            style={{ left: `calc(${pad.left}px + (100% - ${pad.left + pad.right}px) / 2)`, top: pad.top ? pad.top + 8 : undefined }}
+          >
+            O mapa mostra as {mapaInfo.mostrados.toLocaleString("pt-BR")} de maior score, de {mapaInfo.total.toLocaleString("pt-BR")}. Refine os filtros para ver todas.
+          </p>
+        )}
       </div>
 
       {/* Camada flutuante: barra, etiquetas, filtros e lista */}
@@ -272,7 +291,7 @@ export function RadarView({ initialQuery, ctx, municipios, listName, initialSele
             <span className="mx-0.5 hidden h-5 w-px bg-line md:block" aria-hidden />
             <div className="flex items-center gap-0.5">
               <IconBtn label="Salvar pesquisa" onClick={() => setModal("search")}><IconBookmark width={16} height={16} /></IconBtn>
-              <IconBtn label="Salvar resultado em lista" onClick={() => setModal("bulk")} disabled={!allIds.length || allIds.length > 5000}><IconList width={16} height={16} /></IconBtn>
+              <IconBtn label="Salvar resultado em lista" onClick={() => setModal("bulk")} disabled={!allIds.length || allIds.length > 5000 || (total ?? 0) > 5000}><IconList width={16} height={16} /></IconBtn>
               <a
                 href={`/api/companies/export?${query}`}
                 download

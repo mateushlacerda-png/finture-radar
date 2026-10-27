@@ -69,13 +69,15 @@ jobs:
         if: steps.v.outputs.nova == 'true'
         env:
           C: ${{ steps.v.outputs.competencia }}
+          # O recorte icp-brasil passa por ~2,5 milhões de empresas na leitura.
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           npx tsx scripts/import-receita.ts \
             --estab ".data/receita/$C/ESTABELE-filtrado.csv" \
             --empresas ".data/receita/$C/EMPRESAS-filtrado.csv" \
             --base ".data/receita/$C/ESTABELE-base.csv" \
             --centroides scripts/ref/centroides-siafi.csv \
-            --recorte icp-enxuto --competencia "$C" ${SIMULAR:+--dry-run} | tee importacao.log
+            --recorte icp-brasil --competencia "$C" ${SIMULAR:+--dry-run} | tee importacao.log
 
       - name: Sites das empresas novas
         if: steps.v.outputs.nova == 'true' && env.SIMULAR == ''

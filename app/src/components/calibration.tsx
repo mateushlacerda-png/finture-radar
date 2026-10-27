@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { previewWeights, saveWeights } from "@/lib/actions/settings";
 import { SCORE_LABELS, SOLUCOES, type ScoreKey } from "@/lib/domain";
 import { CRITERIA_LABELS, DEFAULT_WEIGHTS, type Weights } from "@/lib/scoring/weights";
@@ -11,9 +11,21 @@ import { useToast } from "@/components/ui/toast";
 const GROUPS: ScoreKey[] = ["geral", "saude", "seguro", "credito", "parceria"];
 const FAIXAS = ["até 39", "40 a 59", "60 a 79", "80+"];
 
-export function Calibration({ weights, version, editable, initialPreview }: { weights: Weights; version: number; editable: boolean; initialPreview: Record<ScoreKey, number[]> | null }) {
+export function Calibration({ weights, version, editable, mostrarDistribuicao }: { weights: Weights; version: number; editable: boolean; mostrarDistribuicao: boolean }) {
   const [w, setW] = useState<Weights>(weights);
-  const [preview, setPreview] = useState(initialPreview);
+  const [preview, setPreview] = useState<Record<ScoreKey, number[]> | null>(null);
+  // Distribuição com os pesos atuais vem da API (base já em memória lá), para a página abrir na hora.
+  useEffect(() => {
+    if (!mostrarDistribuicao) return;
+    let vivo = true;
+    fetch("/api/companies/aderencia", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { faixas: Record<ScoreKey, number[]> } | null) => vivo && d && setPreview((p) => p ?? d.faixas))
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [mostrarDistribuicao]);
   const [dirty, setDirty] = useState(false);
   const [saving, startSave] = useTransition();
   const [previewing, startPreview] = useTransition();

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db/client";
 import { auditEvents } from "@/lib/db/schema";
 import { AuthError, type Session } from "@/lib/auth/session";
+import { invalidateRankings } from "@/lib/queries/ranking-cache";
 
 export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -12,6 +13,7 @@ export class UserError extends Error {}
 export async function run<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
   try {
     const data = await fn();
+    invalidateRankings();
     return { ok: true, data };
   } catch (e) {
     if (e instanceof AuthError || e instanceof UserError) return { ok: false, error: e.message };

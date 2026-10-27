@@ -1,5 +1,21 @@
 # AI_HANDOFF: Finture Radar
 
+## 2026-10-27 (noite) — Clientes e imobiliárias do Brasil (recorte icp-brasil) e desempenho
+
+- **Pedido do usuário:** clientes só apareciam no RJ; expandir para o Brasil (plano A: clientes médio/grande) e, se coubesse no plano grátis da Neon, imobiliárias do Brasil também.
+- **Recorte `icp-brasil`** (`scripts/import-receita.ts`): contém o icp-enxuto inteiro (nada saiu) + imobiliárias do Brasil em EPP/médio-grande + clientes do Brasil em médio/grande. **537.851 empresas** (antes 86.054): 69.688 parceiros, 468.163 clientes. Neon: **274 MB de 512 MB**. Workflow mensal já usa esse recorte (com `NODE_OPTIONS` 4 GB na importação).
+- **Desempenho (a base 6x maior deixava a busca em ~4 s e a primeira carga em ~20 s por servidor):**
+  - `rankCompanies`: busca ordenada guardada 5 s (`queries/ranking-cache.ts`), compartilhada por lista e mapa; toda action limpa o cache (`actions/_util.ts`).
+  - Sem cópia das linhas por busca (`Hit = { r, status, nova }`); só a página vira `RadarRow` (`all` é getter, para CSV e listas).
+  - Ordenação por baldes de score sobre a base já em ordem alfabética (ordem feita no SQL em `loadBaseRows`).
+  - Score por perfil (`perfilDoScore` em `scoring/engine.ts`): poucos milhares de perfis em vez de 537 mil cálculos. `tests/unit/scoring-perfil.test.ts` garante que o perfil cobre tudo o que o motor lê; **ao mudar um critério, atualizar a chave**.
+  - Mapa: JSON montado de texto pronto na base; no máximo 120 mil pontos (os de maior score), com aviso na tela; lista chega sem esperar o mapa.
+  - Páginas não carregam a base: municípios e novidades por SQL; aderência do Dashboard e distribuição da calibração vêm de `/api/companies/aderencia`. Versão da base conferida a cada 30 s. `vercel.json` com `fluid: true`.
+- **Medido na Vercel (quente):** Radar clientes Brasil lista 1,4 a 2,6 s, mapa ~5 s; parceiros ~1,8 s; dashboard 0,8 s + aderência; páginas < 2 s.
+- **Limite conhecido:** primeira chamada da API depois de um deploy ou de ociosidade recarrega a base: **~15 a 20 s**. Próximo passo se incomodar: snapshot pré-processado da base (Blob) ou fase 2 (filtro no SQL).
+- **Atenção:** só as 11.746 empresas da base antiga têm site verificado; as novas ainda não passaram pelo `enriquecer-sites`, então a "qualidade do dado" favorece as do RJ no score Geral até rodar o enriquecimento.
+- **Testes:** typecheck, lint, 39/39 unidade, e2e 10/10 (CRM passou ao repetir, timeout de teardown por memória da máquina).
+
 ## 2026-10-27 (noite) — Atualização mensal automática da Receita
 
 - **Pedido do usuário:** atualizar a base sozinha; repositório privado no GitHub; marcar empresas novas e tirar do Radar as que fecharam. Mensal.

@@ -7,7 +7,7 @@ import { canManage, requireSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db/client";
 import { auditEvents, suppressions, users } from "@/lib/db/schema";
 import { ROLES } from "@/lib/domain";
-import { getWeights, searchCompaniesWith } from "@/lib/queries/companies";
+import { getWeights } from "@/lib/queries/companies";
 import { listUsers } from "@/lib/queries/crm";
 
 export const metadata: Metadata = { title: "Configurações" };
@@ -41,12 +41,6 @@ export default async function ConfigPage() {
           .from(auditEvents).leftJoin(users, eq(users.id, auditEvents.userId)).where(eq(auditEvents.orgId, s.orgId)).orderBy(desc(auditEvents.createdAt)).limit(40)
       : Promise.resolve([]),
   ]);
-  let preview: Record<string, number[]> | null = null;
-  if (canManage(s)) {
-    const rows = await searchCompaniesWith(s.orgId, weights);
-    const f = (v: number[]) => [v.filter((x) => x < 40).length, v.filter((x) => x >= 40 && x < 60).length, v.filter((x) => x >= 60 && x < 80).length, v.filter((x) => x >= 80).length];
-    preview = Object.fromEntries((["geral", "saude", "seguro", "credito", "parceria"] as const).map((k) => [k, f(rows.map((r) => r.scores[k]))]));
-  }
 
   return (
     <div className="space-y-8 pb-10">
@@ -59,7 +53,7 @@ export default async function ConfigPage() {
           {s.role === "admin" ? " Cada gravação cria uma versão nova e fica na auditoria." : " Só o perfil Admin altera os pesos."}
           {" "}Quando houver histórico suficiente de ganhos e perdas, a calibração passa a ser sugerida por modelo (ver ARQUITETURA.md, fase 4).
         </p>
-        <Calibration weights={weights} version={version} editable={s.role === "admin"} initialPreview={preview as never} />
+        <Calibration weights={weights} version={version} editable={s.role === "admin"} mostrarDistribuicao={canManage(s)} />
       </section>
 
       <section className="grid gap-4 px-4 md:px-8 lg:grid-cols-2">

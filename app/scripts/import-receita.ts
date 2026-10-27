@@ -12,6 +12,9 @@
  * - --recorte icp-enxuto (o usado em 2026-10, decidido com o usuário): escritórios de investimento,
  *   gestoras e auxiliares financeiros no Brasil; imobiliárias só no RJ; empresas-cliente só no RJ e
  *   só de porte EPP ou médio/grande. Sedes no exterior (UF "EX") ficam fora em qualquer recorte.
+ * - --recorte icp-brasil (2026-10-27, decidido com o usuário): o icp-enxuto mais imobiliárias de todo o
+ *   Brasil em EPP ou médio/grande e clientes de todo o Brasil em médio/grande. Contém o icp-enxuto inteiro
+ *   (nada que já estava na base sai). Cerca de 530 mil empresas na competência 2026-10.
  * - Empresas: carrega só o arquivo já filtrado (scripts/receita-baixar-filtrar.py). Estabelecimentos
  *   são lidos em streaming e gravados em lotes, para caber em pouca memória.
  * - Coordenada = sede do município, casada pelo código SIAFI/TOM que a Receita usa
@@ -73,6 +76,10 @@ async function main() {
   const noRecorte = (e: NonNullable<ReturnType<typeof parseEstabelecimento>>) => {
     if (e.uf === "EX") return false;
     const ehParceiro = !!e.cnaePrincipal && parceiro.has(e.cnaePrincipal);
+    if (recorte === "icp-brasil") {
+      const c = e.cnaePrincipal ?? "";
+      return FINANCEIROS.has(c) || IMOBILIARIAS.has(c) || (!ehParceiro && !!cnaes?.has(c));
+    }
     if (recorte === "icp-enxuto") {
       const c = e.cnaePrincipal ?? "";
       return FINANCEIROS.has(c) || (IMOBILIARIAS.has(c) && e.uf === "RJ") || (!ehParceiro && !!cnaes?.has(c) && e.uf === "RJ");
@@ -158,6 +165,18 @@ async function main() {
     if (recorte === "icp-enxuto" && !parceiro.has(e.cnaePrincipal ?? "") && emp.porte !== "EPP" && emp.porte !== "DEMAIS") {
       stats.foraDoRecorte++;
       continue;
+    }
+    // icp-brasil: o porte decide fora do RJ (no RJ vale a regra do icp-enxuto, para não tirar ninguém da base).
+    if (recorte === "icp-brasil") {
+      const c = e.cnaePrincipal ?? "";
+      const grande = emp.porte === "DEMAIS";
+      const epp = emp.porte === "EPP";
+      const ok = FINANCEIROS.has(c)
+        ? true
+        : IMOBILIARIAS.has(c)
+          ? e.uf === "RJ" || grande || epp
+          : grande || (epp && e.uf === "RJ");
+      if (!ok) { stats.foraDoRecorte++; continue; }
     }
     const c = centroides.get(e.municipioCodigo.padStart(4, "0"));
     if (!c) stats.semGeo++;

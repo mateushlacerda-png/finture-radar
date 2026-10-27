@@ -3,8 +3,6 @@ import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { activities, companies, companyStatus, opportunities, suppressions, users } from "@/lib/db/schema";
 import { ETAPAS, ETAPAS_ABERTAS, SOLUCAO_KEYS } from "@/lib/domain";
-import { parseFilters } from "@/lib/filters";
-import { searchCompanies } from "./companies";
 
 export const PERIODOS = { "30": "30 dias", "90": "90 dias", "180": "6 meses", "365": "12 meses" } as const;
 export type Periodo = keyof typeof PERIODOS;
@@ -29,7 +27,7 @@ export async function getDashboard(orgId: string, periodo: Periodo) {
     porDono,
     atividadesPorDono,
     semanal,
-    base,
+    [{ n: baseAtiva }],
   ] = await Promise.all([
     db
       .select({ n: count() })
@@ -90,7 +88,16 @@ export async function getDashboard(orgId: string, periodo: Periodo) {
       .where(and(inOrg, inPeriod))
       .groupBy(sql`1`)
       .orderBy(sql`1`),
-    searchCompanies(orgId, parseFilters({})),
+    // Ativas no Radar = mesma regra da busca padrão (ATIVA, sem descarte nem oposição), contada no banco:
+    // a página não carrega a base em memória (isso fica na API, que já está aquecida).
+    db
+      .select({ n: count() })
+      .from(companies)
+      .where(
+        sql`${companies.situacao} = 'ATIVA'
+          and not exists (select 1 from ${suppressions} where ${suppressions.orgId} = ${orgId} and ${suppressions.cnpj} = ${companies.cnpj})
+          and not exists (select 1 from ${companyStatus} where ${companyStatus.orgId} = ${orgId} and ${companyStatus.companyId} = ${companies.id} and ${companyStatus.status} = 'descartado')`,
+      ),
   ]);
 
   const ganhosSemana = await db
@@ -123,12 +130,6 @@ export async function getDashboard(orgId: string, periodo: Periodo) {
   const criadasMap = new Map(semanal.map((s) => [s.semana, s.criadas]));
   const evolucao = semanas.map((w) => ({ semana: w, criadas: criadasMap.get(w) ?? 0, ganhas: ganhosMap.get(w) ?? 0 }));
 
-  const aderencia = SOLUCAO_KEYS.map((s) => ({
-    solucao: s,
-    empresas: base.all.filter((r) => r.scores[s] >= 60).length,
-    fortes: base.all.filter((r) => r.scores[s] >= 80).length,
-  }));
-
   return {
     kpis: { totalEmpresas, qualificados, emProspeccao, abertas, ganhas: funil[funil.length - 1].n },
     conversao,
@@ -137,8 +138,7 @@ export async function getDashboard(orgId: string, periodo: Periodo) {
     porCidade,
     responsaveis,
     evolucao,
-    aderencia,
-    baseAtiva: base.total,
+    baseAtiva,
   };
 }
 export type DashboardData = Awaited<ReturnType<typeof getDashboard>>;

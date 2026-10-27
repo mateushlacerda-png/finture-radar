@@ -228,3 +228,31 @@ export function scoreCompany(c: ScorableCompany, weights: Weights, now = new Dat
 export function solucoesRecomendadas(s: CompanyScores, min = 60): Solucao[] {
   return SOLUCAO_KEYS.filter((k) => s[k].value >= min).sort((a, b) => s[b].value - s[a].value);
 }
+
+/**
+ * Chave de perfil: tudo o que muda os NÚMEROS de scoreCompany (valores, confiança, recomendadas).
+ * Empresas com o mesmo perfil têm o mesmo score; com 500 mil empresas e poucos milhares de perfis,
+ * o Radar calcula uma vez por perfil. Ao mudar um critério acima, atualize esta chave
+ * (tests/unit/scoring-perfil.test.ts compara as duas coisas e quebra se divergirem).
+ */
+export function perfilDoScore(c: ScorableCompany, now: Date): string {
+  const anos = anosDeAtividade(c.dataAbertura, now);
+  const tempo = anos === null ? "n" : anos < 1 ? "0" : anos < 3 ? "1" : anos < 10 ? "2" : "3";
+  const v = c.capitalSocial;
+  const capital = v === null || v === undefined ? "n" : v === 0 ? "z" : v < 0 ? "neg" : v < 50_000 ? "0" : v < 500_000 ? "1" : v < 5_000_000 ? "2" : "3";
+  return [
+    c.situacao.toUpperCase() === "ATIVA" ? "A" : "I",
+    c.cnaePrincipal ?? "",
+    c.porte ?? "",
+    c.funcionariosFaixa ?? "",
+    tempo,
+    c.dataAbertura ? 1 : 0,
+    capital,
+    c.telefone ? 1 : 0,
+    c.email ? 1 : 0,
+    c.site ? 1 : 0,
+    fantasiaValida(c.nomeFantasia) ? 1 : 0,
+    c.geoPrecision === "endereco" || c.geoPrecision === "cep" ? 1 : 0,
+    c.source,
+  ].join("|");
+}

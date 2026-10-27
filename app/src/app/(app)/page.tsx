@@ -5,6 +5,7 @@ import { Card } from "@/components/ui";
 import { IconArrowRight } from "@/components/icons";
 import { cx } from "@/lib/cx";
 import { EvolucaoChart, UfChart } from "@/components/dashboard/charts";
+import { Aderencia } from "@/components/dashboard/aderencia";
 import { SERIE_1, SERIE_2 } from "@/components/dashboard/palette";
 import { requireSession } from "@/lib/auth/session";
 import { SOLUCOES } from "@/lib/domain";
@@ -22,7 +23,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const [d, mode] = await Promise.all([getDashboard(s.orgId, periodo), getDataMode()]);
   const maxFunil = d.conversao[0]?.n || 1;
   const maxPipe = Math.max(1, ...d.pipeline.map((x) => x.abertas + x.ganhas));
-  const maxAder = Math.max(1, ...d.aderencia.map((x) => x.empresas));
   const maxCid = Math.max(1, ...d.porCidade.map((x) => x.n));
 
   return (
@@ -139,20 +139,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
 
         <Panel title="Aderência da base às soluções" sub="Empresas ativas no Radar com score 60+ e 80+ em cada solução, pelos pesos atuais">
-          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {d.aderencia.map((a) => (
-              <li key={a.solucao}>
-                <Link href={`/radar?solucao=${a.solucao}&scoreMin=60`} className="lift pressable group block rounded-lg border border-line bg-paper p-3.5 hover:border-orange/40">
-                  <p className="flex items-center justify-between text-sm font-medium">{SOLUCOES[a.solucao].label}<IconArrowRight width={14} height={14} className="-translate-x-1 text-orange opacity-0 transition-[opacity,transform] duration-200 ease-[var(--ease-out)] group-hover:translate-x-0 group-hover:opacity-100" /></p>
-                  <p className="mt-1 font-display text-2xl font-semibold tabular">{n(a.empresas)}</p>
-                  <p className="text-xs text-muted">{n(a.fortes)} com score 80+</p>
-                  <div className="mt-2 h-1.5 rounded-full bg-ink/[0.06]" aria-hidden>
-                    <div className="h-full origin-left animate-grow-x rounded-full" style={{ width: `${(a.empresas / maxAder) * 100}%`, background: SERIE_1 }} />
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <Aderencia />
         </Panel>
         <p className="text-xs text-muted">
           {mode.kind === "demo"
