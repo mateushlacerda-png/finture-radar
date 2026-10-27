@@ -20,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import zipfile
 
 ARGS = sys.argv[1:]
@@ -52,10 +53,18 @@ def baixar(nome):
         return destino
     print(f"baixando {nome}...", flush=True)
     tmp = destino + ".part"
-    subprocess.run(
-        ["curl", "-sS", "--fail", "--retry", "5", "--retry-delay", "10", "-C", "-", "-u", f"{TOKEN}:", "-o", tmp, BASE + nome],
-        check=True,
-    )
+    # O servidor da RFB derruba conexões com frequência ("connection reset"). --retry-all-errors cobre isso,
+    # -C - retoma do ponto onde parou, e o laço externo insiste por mais tempo antes de desistir.
+    for tentativa in range(1, 9):
+        r = subprocess.run(
+            ["curl", "-sS", "--fail", "--retry", "5", "--retry-all-errors", "--retry-delay", "10", "-C", "-", "-u", f"{TOKEN}:", "-o", tmp, BASE + nome]
+        )
+        if r.returncode == 0:
+            break
+        if tentativa == 8:
+            raise SystemExit(f"falhou ao baixar {nome} (curl {r.returncode})")
+        print(f"  {nome}: curl {r.returncode}, tentando de novo ({tentativa}/8)", flush=True)
+        time.sleep(30 * tentativa)
     os.replace(tmp, destino)
     return destino
 
