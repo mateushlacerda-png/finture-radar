@@ -4,9 +4,9 @@
 
 - **Pedido do usuário:** tirar o login; o Radar vai para o hub da Finture, onde a pessoa já estará logada.
 - **Feito:** `RADAR_ACESSO_ABERTO` (e-mail de um usuário). Com a variável, `getSession()` (`lib/auth/session.ts`) devolve esse usuário quando não há cookie, o proxy deixa passar e manda `/login` para `/`, e o botão "Sair" some. Sem a variável, login normal (local e e2e).
-- **Produção:** `RADAR_ACESSO_ABERTO=gestor@finture.demo` na Vercel (Rafael Lima, gestor comercial: vê e edita o CRM inteiro, não altera pesos nem equipe).
+- **Produção:** `RADAR_ACESSO_ABERTO=equipe@finture.demo`, usuário **"Finture"** (perfil gestor, org Finture) criado no Neon a pedido do usuário para as ações saírem como "Finture"; senha aleatória que ninguém conhece. Vê e edita o CRM inteiro, não altera pesos nem equipe.
 - **Hub:** a identidade passa a vir da plataforma em `getSession()`; o resto do app não muda.
-- **Risco aceito pelo usuário:** quem tiver o link vê a base inteira (contatos cadastrais da Receita), exporta CSV e mexe no CRM. Todas as ações ficam registradas como Rafael Lima.
+- **Risco aceito pelo usuário:** quem tiver o link vê a base inteira (contatos cadastrais da Receita), exporta CSV e mexe no CRM. Todas as ações ficam registradas como "Finture".
 - **Testes:** modo aberto conferido no demo e na produção; modo normal com e2e de rota protegida, isolamento, CSV e mobile.
 
 ## 2026-10-27 (noite) — Clientes e imobiliárias do Brasil (recorte icp-brasil) e desempenho

@@ -31,7 +31,7 @@ npm run typecheck && npm run lint
 
 Produção: **https://finture-radar.vercel.app** (Vercel, projeto `finture-radar`, funções em `gru1`), banco Neon `finture-radar-db` ligado só a production/preview. Deploy: `vercel deploy --prod` dentro de `app/`. Não puxe `DATABASE_URL` para `.env.local`: o servidor local passaria a gravar no Neon. Briefing por IA fica desligado na Vercel (`RADAR_AI=1` liga quando houver API). Base: recorte `icp-brasil` (~538 mil empresas, 274 MB no Neon); atualização mensal pelo workflow `.github/workflows/receita-mensal.yml` (GitHub `mateushlacerda-png/finture-radar`, privado).
 
-Na Vercel o site abre **sem login** (`RADAR_ACESSO_ABERTO=gestor@finture.demo`) até a integração com o hub; local e testes seguem com login. Usuários (senha `radar-demo-2026`): `admin@finture.demo`, `gestor@finture.demo`, `juliana@finture.demo`, `bruno@finture.demo`.
+Na Vercel o site abre **sem login** (`RADAR_ACESSO_ABERTO=equipe@finture.demo`, usuário "Finture" que só existe no Neon) até a integração com o hub; local e testes seguem com login. Usuários (senha `radar-demo-2026`): `admin@finture.demo`, `gestor@finture.demo`, `juliana@finture.demo`, `bruno@finture.demo`.
 
 ## Armadilhas desta máquina
 
