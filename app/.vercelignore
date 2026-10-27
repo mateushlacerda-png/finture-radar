@@ -1,0 +1,8 @@
+# Bases locais e dados brutos ficam fora do deploy (a produção usa Postgres via DATABASE_URL).
+.data
+node_modules
+.next
+test-results
+playwright-report
+.playwright-mcp
+tsconfig.tsbuildinfo

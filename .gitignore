@@ -1,0 +1,9 @@
+# Bases locais, dados brutos da Receita e coletas (a produção usa o Neon)
+app/.data/
+# Artefatos de teste e de navegação
+app/test-results/
+app/playwright-report/
+.playwright-mcp/
+# Segredos e vínculo local com a Vercel
+.env*
+.vercel/

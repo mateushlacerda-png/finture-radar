@@ -1,0 +1,106 @@
+# Atualização mensal da base com os Dados Abertos do CNPJ (Receita Federal).
+# Roda toda segunda e só trabalha quando a RFB terminou de publicar uma competência nova
+# (a data de publicação varia). Empresas novas entram com "Nova na base"; as que deixaram de
+# ser ativas saem do Radar. O lote (6,8 GB) não cabe numa função da Vercel, por isso roda aqui.
+name: Atualização mensal da Receita
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # segunda, 06:00 em Brasília
+  workflow_dispatch:
+    inputs:
+      competencia:
+        description: "Competência AAAA-MM (vazio = a mais recente publicada)"
+        required: false
+      simular:
+        description: "Só simular: baixa e filtra, mas não grava no banco"
+        type: boolean
+        default: true
+
+concurrency:
+  group: receita-mensal
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    defaults:
+      run:
+        working-directory: app
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # No agendamento não há inputs: grava de verdade. Na execução manual, o padrão é simular.
+      SIMULAR: ${{ github.event_name == 'workflow_dispatch' && inputs.simular && '1' || '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependências
+        run: npm ci
+
+      - name: Há competência nova?
+        id: v
+        run: npx tsx scripts/receita-verificar.ts ${{ inputs.competencia && format('--competencia {0}', inputs.competencia) || '' }}
+
+      - name: Migrações do banco
+        if: steps.v.outputs.nova == 'true' && env.SIMULAR == ''
+        run: npx drizzle-kit migrate
+
+      - name: Baixar e filtrar a competência
+        if: steps.v.outputs.nova == 'true'
+        env:
+          C: ${{ steps.v.outputs.competencia }}
+        run: |
+          mkdir -p ".data/receita/$C"
+          npx tsx scripts/receita-verificar.ts --exportar-cnpjs ".data/receita/$C/base-cnpjs.txt"
+          python -I scripts/receita-baixar-filtrar.py "$C" --base-cnpjs ".data/receita/$C/base-cnpjs.txt" --apagar-zips
+
+      - name: Importar no banco
+        if: steps.v.outputs.nova == 'true'
+        env:
+          C: ${{ steps.v.outputs.competencia }}
+        run: |
+          npx tsx scripts/import-receita.ts \
+            --estab ".data/receita/$C/ESTABELE-filtrado.csv" \
+            --empresas ".data/receita/$C/EMPRESAS-filtrado.csv" \
+            --base ".data/receita/$C/ESTABELE-base.csv" \
+            --centroides scripts/ref/centroides-siafi.csv \
+            --recorte icp-enxuto --competencia "$C" ${SIMULAR:+--dry-run} | tee importacao.log
+
+      - name: Sites das empresas novas
+        if: steps.v.outputs.nova == 'true' && env.SIMULAR == ''
+        # Falha aqui não desfaz a importação: o site só complementa a ficha.
+        continue-on-error: true
+        env:
+          C: ${{ steps.v.outputs.competencia }}
+        run: |
+          npx tsx scripts/enriquecer-sites.ts --exportar --entrou-em "$C"
+          npx tsx scripts/enriquecer-sites.ts --testar --concorrencia 48
+          npx tsx scripts/enriquecer-sites.ts --aplicar
+          npx tsx scripts/coletar-sites.ts --exportar --entrou-em "$C"
+          npx tsx scripts/coletar-sites.ts --coletar --concorrencia 24
+          npx tsx scripts/coletar-sites.ts --aplicar
+
+      - name: Resumo
+        if: always()
+        env:
+          C: ${{ steps.v.outputs.competencia }}
+          NOVA: ${{ steps.v.outputs.nova }}
+        run: |
+          {
+            echo "### Receita: ${C:-nenhuma competência completa}"
+            if [ "$NOVA" != "true" ]; then echo "Nada novo para importar."; else
+              [ -n "$SIMULAR" ] && echo "**Simulação**: nada foi gravado no banco."
+              echo '```'; tail -n 20 importacao.log 2>/dev/null || echo "sem log de importação"; echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

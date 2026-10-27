@@ -1,0 +1,366 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/IBMPlexSans-Variable.ttf") format("truetype");
+  font-weight: 100 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/SpaceGrotesk-Variable.ttf") format("truetype");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+/* Tokens Finture (Uso de marca Finture/finture-design-system/tokens.css) */
+@theme {
+  --color-orange: #ea622d;
+  --color-orange-deep: #c24a1d;
+  --color-orange-soft: #fbe3d8;
+  --color-ink: #1b1a1a;
+  --color-ink-deep: #131212;
+  --color-ink-2: #242222;
+  --color-cream: #f8f1e7;
+  --color-cream-2: #efe6d6;
+  --color-paper: #fffdf9;
+  --color-wine: #a3221e;
+  --color-success: #2f9e6a;
+  --color-gold: #c9a04a;
+  --color-muted: rgba(27, 26, 26, 0.62);
+  --color-line: rgba(27, 26, 26, 0.1);
+  --color-line-dark: rgba(248, 241, 231, 0.1);
+
+  --font-display: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --shadow-card: 0 1px 2px rgba(27, 26, 26, 0.04), 0 0 0 1px rgba(27, 26, 26, 0.02);
+  --shadow-lift: 0 1px 2px rgba(27, 26, 26, 0.04), 0 8px 24px -12px rgba(27, 26, 26, 0.18);
+  --shadow-pop: 0 16px 40px -16px rgba(27, 26, 26, 0.35), 0 0 0 1px rgba(27, 26, 26, 0.06);
+
+  /* Curvas de movimento (fortes; as nativas do CSS são fracas demais) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --animate-enter: enter 420ms var(--ease-out) both;
+  --animate-grow-x: grow-x 700ms var(--ease-out) both;
+  --animate-grow-y: grow-y 700ms var(--ease-out) both;
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0.02);
+  }
+}
+@keyframes grow-y {
+  from {
+    transform: scaleY(0.02);
+  }
+}
+@keyframes sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ping-soft {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+html,
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
+}
+
+.eyebrow {
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  font-weight: 500;
+}
+
+/* Fio-guia: assinatura da marca */
+.rule-accent {
+  height: 2px;
+  background: linear-gradient(90deg, var(--color-orange) 0%, var(--color-orange) 22%, transparent 64%);
+}
+
+/* Malha de pontos: fundo técnico discreto, some nas bordas */
+.bg-grid {
+  background-image: radial-gradient(rgba(27, 26, 26, 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+  background-position: -11px -11px;
+}
+.bg-grid-dark {
+  background-image: radial-gradient(rgba(248, 241, 231, 0.08) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.fade-mask {
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 100%);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-orange);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Entrada em cascata: filhos diretos de .stagger aparecem um após o outro. */
+.stagger > * {
+  animation: var(--animate-enter);
+}
+.stagger > :nth-child(2) { animation-delay: 40ms; }
+.stagger > :nth-child(3) { animation-delay: 80ms; }
+.stagger > :nth-child(4) { animation-delay: 120ms; }
+.stagger > :nth-child(5) { animation-delay: 160ms; }
+.stagger > :nth-child(6) { animation-delay: 200ms; }
+.stagger > :nth-child(n + 7) { animation-delay: 240ms; }
+
+/* Elementos pressionáveis: resposta imediata ao clique. */
+.pressable {
+  transition: transform 160ms var(--ease-out);
+}
+.pressable:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Card com holofote que segue o cursor (variáveis gravadas no próprio elemento). */
+.spotlight {
+  position: relative;
+  isolation: isolate;
+}
+.spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), rgba(234, 98, 45, 0.09), transparent 70%);
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .spotlight:hover::before {
+    opacity: 1;
+  }
+  .lift {
+    transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out), border-color 150ms ease;
+  }
+  .lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lift);
+  }
+}
+
+/* Modal nativo: entra do centro com leve escala, sai mais rápido. */
+dialog.modal {
+  opacity: 0;
+  transform: scale(0.96) translateY(4px);
+  transition: opacity 150ms ease, transform 150ms var(--ease-out), overlay 150ms allow-discrete, display 150ms allow-discrete;
+}
+dialog.modal[open] {
+  opacity: 1;
+  transform: none;
+  transition-duration: 220ms;
+}
+@starting-style {
+  dialog.modal[open] {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+}
+dialog.modal::backdrop {
+  background: rgba(19, 18, 18, 0);
+  backdrop-filter: blur(0);
+  transition: background 200ms ease, backdrop-filter 200ms ease, overlay 200ms allow-discrete, display 200ms allow-discrete;
+}
+dialog.modal[open]::backdrop {
+  background: rgba(19, 18, 18, 0.42);
+  backdrop-filter: blur(3px);
+}
+@starting-style {
+  dialog.modal[open]::backdrop {
+    background: rgba(19, 18, 18, 0);
+    backdrop-filter: blur(0);
+  }
+}
+
+/* Gaveta lateral (ficha da empresa) */
+.drawer-right {
+  transition: transform 280ms var(--ease-drawer), opacity 200ms ease;
+}
+@starting-style {
+  .drawer-right {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+/* Toast: sobe de baixo, mesma direção em que some. */
+.toast {
+  transition: transform 300ms var(--ease-out), opacity 300ms ease;
+}
+@starting-style {
+  .toast {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+/* Skeleton com brilho que atravessa */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(27, 26, 26, 0.06);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 253, 249, 0.7), transparent);
+  animation: shimmer 1.2s linear infinite;
+}
+
+/* MapLibre: controles na paleta */
+.maplibregl-ctrl-group {
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lift) !important;
+}
+.maplibregl-popup-content {
+  font-family: var(--font-sans);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+}
+
+/* Movimento reduzido: tira deslocamento e escala, mantém só opacidade e cor. */
+@media (prefers-reduced-motion: reduce) {
+  .stagger > *,
+  .animate-enter {
+    animation-name: fade;
+  }
+  .animate-grow-x,
+  .animate-grow-y,
+  .skeleton::after,
+  .animate-sweep {
+    animation: none !important;
+  }
+  .pressable:active:not(:disabled),
+  .lift:hover {
+    transform: none !important;
+  }
+  dialog.modal,
+  .drawer-right,
+  .toast {
+    transform: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Radar: controles do mapa acompanham os painéis flutuantes abertos. */
+.radar-map .maplibregl-ctrl-top-right,
+.radar-map .maplibregl-ctrl-bottom-right {
+  transform: translateX(calc(-1 * var(--pad-right, 0px)));
+  transition: transform 300ms var(--ease-out);
+}
+.radar-map .maplibregl-ctrl-top-right {
+  top: var(--pad-top, 0px);
+}
+.radar-map .map-legend {
+  transform: translateX(var(--pad-left, 0px));
+  transition: transform 300ms var(--ease-out);
+}
+
+/* Vidro: painéis sobre o mapa */
+.glass {
+  background: rgba(255, 253, 249, 0.86);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid rgba(27, 26, 26, 0.08);
+  box-shadow: 0 1px 2px rgba(27, 26, 26, 0.04), 0 12px 32px -16px rgba(27, 26, 26, 0.22);
+}
+
+/* Faixa do score: trilho fino com preenchimento laranja */
+input[type="range"].range {
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--color-orange) var(--fill, 0%), rgba(27, 26, 26, 0.1) var(--fill, 0%));
+}
+input[type="range"].range::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--color-paper);
+  border: 2px solid var(--color-orange);
+  box-shadow: 0 1px 3px rgba(27, 26, 26, 0.25);
+  transition: transform 150ms var(--ease-out);
+}
+input[type="range"].range:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+input[type="range"].range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--color-paper);
+  border: 2px solid var(--color-orange);
+}
+.radar-map .maplibregl-ctrl-attrib {
+  font-size: 10px;
+  background: rgba(255, 253, 249, 0.7);
+  backdrop-filter: blur(8px);
+  border-radius: 999px;
+  color: var(--color-muted);
+}
+.radar-map .maplibregl-ctrl-attrib a {
+  color: var(--color-muted);
+}
