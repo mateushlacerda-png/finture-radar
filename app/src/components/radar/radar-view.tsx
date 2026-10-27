@@ -209,7 +209,8 @@ export function RadarView({ initialQuery, ctx, municipios, listName, initialSele
             className="pointer-events-none absolute z-10 w-max max-w-[min(420px,calc(100%-2rem))] -translate-x-1/2 rounded-xl bg-ink/85 px-3 py-1.5 text-center text-[11px] leading-snug text-cream shadow-[var(--shadow-pop)] backdrop-blur max-md:top-3"
             style={{ left: `calc(${pad.left}px + (100% - ${pad.left + pad.right}px) / 2)`, top: pad.top ? pad.top + 8 : undefined }}
           >
-            O mapa mostra as {mapaInfo.mostrados.toLocaleString("pt-BR")} de maior score, de {mapaInfo.total.toLocaleString("pt-BR")}. Refine os filtros para ver todas.
+            <strong className="font-semibold">Mapa com as {Math.round(mapaInfo.mostrados / 1000).toLocaleString("pt-BR")} mil melhores de {mapaInfo.total.toLocaleString("pt-BR")}.</strong>{" "}
+            A lista ao lado tem todas. Escolha um estado ou solução para ver todas no mapa.
           </p>
         )}
       </div>
