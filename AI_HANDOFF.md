@@ -1,5 +1,25 @@
 # AI_HANDOFF: Finture Radar
 
+## 2026-10-27 (noite) — Atualização mensal automática da Receita
+
+- **Pedido do usuário:** atualizar a base sozinha; repositório privado no GitHub; marcar empresas novas e tirar do Radar as que fecharam. Mensal.
+- **Feito (código, testado localmente):**
+  - Migração `0003_entrou_em`: coluna `companies.entrou_em` (competência em que a empresa entrou pela atualização mensal; nula = carga inicial).
+  - `scripts/receita-verificar.ts`: acha a competência mais recente **completa** no WebDAV da RFB (confere os 21 zips, com retentativa) e compara com a última carga do banco; `--exportar-cnpjs` lista os CNPJs já na base.
+  - `receita-baixar-filtrar.py`: `--base-cnpjs` grava `ESTABELE-base.csv` (CNPJs da base que deixaram de ser ativos); `--apagar-zips` libera disco.
+  - `import-receita.ts`: `entrou_em` só quando já houve carga de outra competência; `--base` atualiza situação (baixada, suspensa, inapta) das empresas já na base; registra novas/atualizadas em `ingestion_runs`.
+  - `enriquecer-sites.ts` e `coletar-sites.ts`: `--entrou-em` processa só as empresas novas.
+  - App: Radar esconde empresa não ATIVA (ficha e CRM seguem abrindo); cache de score zera quando a base muda; filtro `recentes=1` ("Só as novas na base"), etiqueta, selo "Nova na base" na lista, botão "N novas" na barra e aviso na pergunta inicial.
+  - `.github/workflows/receita-mensal.yml`: toda segunda 06:00 (Brasília); só trabalha quando há competência nova. Manual: `competencia` e `simular` (padrão: simular).
+  - Coordenadas dos municípios copiadas para `app/scripts/ref/centroides-siafi.csv` (antes só em `.data`).
+  - Git iniciado na raiz; repositório privado **github.com/mateushlacerda-png/finture-radar** criado.
+- **Testes:** typecheck, lint, 37/37 unidade, 10/10 e2e (demo). Simulação de 3 meses num PGlite temporário: carga inicial sem "nova", mês 2 com 1 nova, mês 3 com 1 baixada. Interface conferida na demo (marcação temporária desfeita).
+- **Pendente (bloqueado por permissão ou login):**
+  1. `git push`: o `gh` não tem o escopo `workflow`. Rodar `gh auth refresh -h github.com -s workflow` e depois `git push -u origin main`.
+  2. Migração 0003 no Neon (`npx drizzle-kit migrate` com a URL do Neon) **antes** do próximo deploy; o app novo lê `entrou_em`.
+  3. `vercel deploy --prod` da versão nova.
+  4. Segredo `DATABASE_URL` no GitHub (URL sem pooling do Neon) e uma execução manual com `competencia=2026-10` e `simular=true` para validar o pipeline.
+
 ## 2026-10-27 (noite) — Razão social no lugar de nome fantasia inválido
 
 - **Pedido do usuário:** mostrar a razão social quando o nome fantasia for só símbolo ("...", "****", "-").
